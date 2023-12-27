@@ -1,4 +1,5 @@
-import json
+from concurrent.futures import ThreadPoolExecutor
+
 from llama_cpp import Llama
 from .models import FileModel
 
@@ -60,6 +61,41 @@ def classify_email_and_extract_info(llama_model, email_content):
 
     except Exception as e:
         return f"Error: {str(e)}"
+
+
+def classify_and_save(file_model, llama_model):
+    # Read the file content
+    file_content = file_model.file.read().decode("utf-8")
+
+    # Reset the file pointer to the beginning of the file
+    file_model.file.seek(0)
+
+    result = classify_email_and_extract_info(llama_model, file_content)
+
+    extracted_entities = extract_entities(result, file_content)
+
+    if isinstance(result, dict):
+        # Extract entities from the result
+        llm_output = extracted_entities.get("llm_output", None)
+        llm_output = str(llm_output) if llm_output is not None else None
+    else:
+        # If result is not a dictionary, set llm_output to the entire result string
+        llm_output = str(result)
+
+    return llm_output
+
+
+def process_files_parallel(llama_model, files_list):
+    with ThreadPoolExecutor(max_workers=None) as executor:
+        # Use executor.map to apply the function in parallel
+        file_contents = [file_model.file.read().decode("utf-8") for file_model in files_list]
+        results = executor.map(lambda file_content: classify_and_save(file_content, llama_model), file_contents)
+
+        for file_model, llm_output in zip(files_list, results):
+            file_model.llm_output = llm_output
+            file_model.save()
+
+
 
 
 # Example usage
